@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import random
+import time
 from datetime import datetime, timedelta
 
 # ============================================================
@@ -17,30 +18,55 @@ st.set_page_config(
 )
 
 # ============================================================
-# THEME
+# SESSION STATE
+# ============================================================
+
+if "traffic_seed" not in st.session_state:
+    st.session_state.traffic_seed = 100
+
+if "last_update" not in st.session_state:
+    st.session_state.last_update = datetime.now()
+
+if "prediction_history" not in st.session_state:
+    st.session_state.prediction_history = []
+
+# ============================================================
+# GLOBAL STYLE
 # ============================================================
 
 st.markdown(
     """
     <style>
-    @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Space+Grotesk:wght@400;500;600;700&display=swap');
+
+    @import url(
+        'https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Space+Grotesk:wght@400;500;600;700&display=swap'
+    );
 
     :root {
         --bg: #080b0a;
-        --panel: #0e1311;
-        --panel2: #111815;
-        --border: #26302c;
+        --panel: #0d1210;
+        --panel-2: #111714;
+        --border: #27312d;
+
         --text: #e8eee9;
-        --muted: #7d8983;
-        --dim: #505b56;
+        --muted: #7c8983;
+        --dim: #4e5954;
+
         --green: #b0df63;
-        --green-dark: #719d3e;
-        --amber: #dfb45c;
-        --red: #db6c5d;
-        --cyan: #70c4c0;
+        --green-dark: #759c43;
+
+        --amber: #dfb65e;
+        --red: #dd6d5d;
+        --cyan: #72c3bd;
     }
 
-    * {
+    /* --------------------------------------------------------
+       GLOBAL
+    -------------------------------------------------------- */
+
+    html,
+    body,
+    [class*="css"] {
         font-family: "Space Grotesk", sans-serif;
     }
 
@@ -48,15 +74,16 @@ st.markdown(
         background:
             radial-gradient(
                 circle at 85% 0%,
-                rgba(130, 160, 90, 0.07),
-                transparent 28%
+                rgba(140, 170, 100, 0.065),
+                transparent 27%
             ),
             radial-gradient(
-                circle at 10% 100%,
-                rgba(65, 110, 100, 0.055),
-                transparent 30%
+                circle at 5% 100%,
+                rgba(60, 105, 95, 0.045),
+                transparent 28%
             ),
             var(--bg);
+
         color: var(--text);
     }
 
@@ -66,17 +93,26 @@ st.markdown(
         inset: 0;
         pointer-events: none;
         opacity: 0.018;
+
         background-image:
-            linear-gradient(#ffffff 1px, transparent 1px),
-            linear-gradient(90deg, #ffffff 1px, transparent 1px);
-        background-size: 50px 50px;
+            linear-gradient(
+                rgba(255,255,255,0.8) 1px,
+                transparent 1px
+            ),
+            linear-gradient(
+                90deg,
+                rgba(255,255,255,0.8) 1px,
+                transparent 1px
+            );
+
+        background-size: 48px 48px;
         z-index: 0;
     }
 
     .block-container {
-        max-width: 1450px;
-        padding-top: 2.2rem;
-        padding-bottom: 4rem;
+        max-width: 1480px;
+        padding-top: 2rem;
+        padding-bottom: 3rem;
     }
 
     #MainMenu {
@@ -91,7 +127,9 @@ st.markdown(
         background: transparent !important;
     }
 
-    /* SIDEBAR */
+    /* --------------------------------------------------------
+       SIDEBAR
+    -------------------------------------------------------- */
 
     section[data-testid="stSidebar"] {
         background: #090d0c;
@@ -102,151 +140,144 @@ st.markdown(
         padding: 1.4rem 1rem;
     }
 
-    .sidebar-brand {
-        padding: 0.4rem 0.25rem 1.7rem 0.25rem;
+    .brand-block {
+        padding: 0.4rem 0.3rem 1.6rem;
     }
 
     .brand-symbol {
-        font-family: "DM Mono", monospace;
         color: var(--green);
-        font-size: 24px;
-        margin-bottom: 5px;
+        font-family: "DM Mono", monospace;
+        font-size: 22px;
+        line-height: 1;
+        margin-bottom: 8px;
     }
 
     .brand-name {
+        color: #eef3ef;
         font-family: "DM Mono", monospace;
-        color: var(--text);
-        font-size: 19px;
+        font-size: 18px;
+        letter-spacing: 0.14em;
         font-weight: 500;
-        letter-spacing: 0.12em;
     }
 
-    .brand-description {
+    .brand-subtitle {
         color: var(--dim);
         font-family: "DM Mono", monospace;
-        font-size: 8px;
+        font-size: 7px;
         letter-spacing: 0.13em;
-        margin-top: 5px;
-        line-height: 1.6;
+        line-height: 1.7;
+        margin-top: 7px;
     }
 
-    .nav-caption {
-        color: #4d5953;
+    .sidebar-caption {
+        color: #4c5752;
         font-family: "DM Mono", monospace;
         font-size: 8px;
-        letter-spacing: 0.17em;
-        margin: 20px 4px 8px;
+        letter-spacing: 0.18em;
+        margin: 15px 4px 8px;
     }
 
-    div[data-testid="stSidebar"] .stRadio label {
-        color: #84908a !important;
+    /* Native Streamlit radio */
+    div[data-testid="stSidebar"] div[role="radiogroup"] {
+        gap: 3px;
+    }
+
+    div[data-testid="stSidebar"] div[role="radiogroup"] label {
+        padding: 7px 5px;
+        border-radius: 2px;
+    }
+
+    div[data-testid="stSidebar"] div[role="radiogroup"] label:hover {
+        background: #101613;
+    }
+
+    div[data-testid="stSidebar"] div[role="radiogroup"] p {
         font-family: "DM Mono", monospace !important;
         font-size: 10px !important;
-    }
-
-    div[data-testid="stSidebar"] .stRadio > div {
-        gap: 4px;
-    }
-
-    .sidebar-status {
-        border: 1px solid var(--border);
-        background: #0c1110;
-        padding: 13px;
-        margin-top: 25px;
-    }
-
-    .status-item {
-        display: flex;
-        justify-content: space-between;
-        margin-bottom: 9px;
-        font-family: "DM Mono", monospace;
-        font-size: 8px;
-    }
-
-    .status-item:last-child {
-        margin-bottom: 0;
-    }
-
-    .status-label {
-        color: var(--dim);
-    }
-
-    .status-online {
-        color: var(--green);
+        color: #a1aca6 !important;
     }
 
     .sidebar-footer {
-        margin-top: 25px;
+        margin-top: 28px;
         color: #414b47;
         font-family: "DM Mono", monospace;
-        font-size: 8px;
-        line-height: 1.8;
+        font-size: 7px;
+        line-height: 1.9;
+        letter-spacing: 0.04em;
     }
 
-    /* HEADERS */
+    /* --------------------------------------------------------
+       PAGE HEADER
+    -------------------------------------------------------- */
 
     .eyebrow {
         color: var(--green);
         font-family: "DM Mono", monospace;
         font-size: 8px;
-        letter-spacing: 0.2em;
-        margin-bottom: 8px;
+        letter-spacing: 0.22em;
+        margin-bottom: 7px;
     }
 
-    .main-title {
-        color: #eef3ef;
+    .page-title {
+        color: #eef4ef;
         font-size: 35px;
         font-weight: 600;
-        letter-spacing: -0.045em;
         line-height: 1.05;
+        letter-spacing: -0.045em;
         margin-bottom: 9px;
     }
 
-    .main-description {
+    .page-description {
         color: var(--muted);
         font-family: "DM Mono", monospace;
         font-size: 9px;
-        line-height: 1.8;
-        max-width: 800px;
+        line-height: 1.75;
+        max-width: 820px;
     }
 
-    .rule {
+    .header-line {
         height: 1px;
-        margin: 23px 0 25px;
-        background: linear-gradient(
-            90deg,
-            var(--green-dark),
-            var(--border),
-            transparent
-        );
+        margin: 23px 0 24px;
+
+        background:
+            linear-gradient(
+                90deg,
+                var(--green-dark),
+                var(--border),
+                transparent
+            );
     }
 
-    /* METRIC CARDS */
+    /* --------------------------------------------------------
+       METRICS
+    -------------------------------------------------------- */
 
     div[data-testid="stMetric"] {
-        background: linear-gradient(
-            145deg,
-            rgba(255,255,255,0.018),
-            rgba(255,255,255,0)
-        );
+        background:
+            linear-gradient(
+                145deg,
+                rgba(255,255,255,0.018),
+                rgba(255,255,255,0)
+            ),
+            #0c1110;
+
         border: 1px solid var(--border);
         padding: 15px 17px;
-        min-height: 105px;
+        min-height: 110px;
     }
 
     div[data-testid="stMetricLabel"] {
         color: var(--dim) !important;
         font-family: "DM Mono", monospace !important;
         font-size: 8px !important;
-        letter-spacing: 0.1em;
-        text-transform: uppercase;
+        letter-spacing: 0.11em;
     }
 
     div[data-testid="stMetricValue"] {
         color: var(--text) !important;
         font-family: "DM Mono", monospace !important;
         font-size: 25px !important;
-        margin-top: 8px;
+        letter-spacing: -0.04em;
     }
 
     div[data-testid="stMetricDelta"] {
@@ -254,13 +285,15 @@ st.markdown(
         font-size: 8px !important;
     }
 
-    /* PANELS */
+    /* --------------------------------------------------------
+       SECTION LABELS
+    -------------------------------------------------------- */
 
     .section-title {
-        color: #aab5af;
+        color: #abb6b0;
         font-family: "DM Mono", monospace;
         font-size: 9px;
-        letter-spacing: 0.13em;
+        letter-spacing: 0.14em;
         text-transform: uppercase;
         margin-bottom: 4px;
     }
@@ -269,17 +302,77 @@ st.markdown(
         color: var(--dim);
         font-family: "DM Mono", monospace;
         font-size: 7px;
-        letter-spacing: 0.08em;
+        letter-spacing: 0.1em;
         margin-bottom: 12px;
     }
 
-    /* BUTTONS */
+    /* --------------------------------------------------------
+       STATUS BAR
+    -------------------------------------------------------- */
+
+    .native-status {
+        border: 1px solid var(--border);
+        background: #0c1110;
+        padding: 12px 14px;
+        margin-top: 20px;
+    }
+
+    .native-status-title {
+        color: #aab5af;
+        font-family: "DM Mono", monospace;
+        font-size: 8px;
+        letter-spacing: 0.12em;
+        margin-bottom: 10px;
+    }
+
+    /* --------------------------------------------------------
+       ALERT BOXES
+    -------------------------------------------------------- */
+
+    .alert-high {
+        border-left: 2px solid var(--red);
+        background: rgba(221,109,93,0.035);
+        padding: 11px 13px;
+        margin-bottom: 8px;
+    }
+
+    .alert-medium {
+        border-left: 2px solid var(--amber);
+        background: rgba(223,182,94,0.035);
+        padding: 11px 13px;
+        margin-bottom: 8px;
+    }
+
+    .alert-title {
+        font-family: "DM Mono", monospace;
+        font-size: 9px;
+        color: #dce4de;
+    }
+
+    .alert-description {
+        color: var(--muted);
+        font-family: "DM Mono", monospace;
+        font-size: 8px;
+        line-height: 1.65;
+        margin-top: 5px;
+    }
+
+    .alert-meta {
+        color: var(--dim);
+        font-family: "DM Mono", monospace;
+        font-size: 7px;
+        margin-top: 6px;
+    }
+
+    /* --------------------------------------------------------
+       BUTTONS
+    -------------------------------------------------------- */
 
     .stButton > button {
         background: #101613;
         border: 1px solid #344039;
         border-radius: 2px;
-        color: #cbd4ce;
+        color: #cad4ce;
         font-family: "DM Mono", monospace;
         font-size: 9px;
         min-height: 38px;
@@ -292,7 +385,9 @@ st.markdown(
         color: var(--green);
     }
 
-    /* INPUTS */
+    /* --------------------------------------------------------
+       INPUTS
+    -------------------------------------------------------- */
 
     div[data-baseweb="input"] > div,
     div[data-baseweb="select"] > div {
@@ -313,59 +408,97 @@ st.markdown(
         font-size: 8px !important;
     }
 
-    /* DATAFRAME */
+    /* --------------------------------------------------------
+       TABLES
+    -------------------------------------------------------- */
 
     div[data-testid="stDataFrame"] {
         border: 1px solid var(--border);
     }
 
-    /* EXPANDER */
+    /* --------------------------------------------------------
+       INFO / SUCCESS / WARNING / ERROR
+    -------------------------------------------------------- */
 
-    div[data-testid="stExpander"] {
-        border: 1px solid var(--border);
+    div[data-testid="stAlert"] {
         border-radius: 2px;
-        background: #0d1210;
+        font-family: "DM Mono", monospace;
+        font-size: 9px;
     }
 
-    /* FOOTER */
+    /* --------------------------------------------------------
+       FOOTER
+    -------------------------------------------------------- */
 
     .app-footer {
+        margin-top: 42px;
         border-top: 1px solid #1a211f;
-        margin-top: 45px;
-        padding-top: 14px;
+        padding-top: 13px;
+
         display: flex;
         justify-content: space-between;
+
         color: #414b47;
         font-family: "DM Mono", monospace;
         font-size: 7px;
         letter-spacing: 0.08em;
     }
+
     </style>
     """,
     unsafe_allow_html=True,
 )
 
 # ============================================================
-# DATA
+# REALISTIC NETWORK DATA
 # ============================================================
 
-random.seed(42)
-np.random.seed(42)
+PROTOCOL_CONFIG = {
+    "HTTP": {
+        "ports": [80],
+        "weight": 15,
+    },
+    "HTTPS": {
+        "ports": [443],
+        "weight": 30,
+    },
+    "DNS": {
+        "ports": [53],
+        "weight": 12,
+    },
+    "SSH": {
+        "ports": [22],
+        "weight": 7,
+    },
+    "SMTP": {
+        "ports": [25],
+        "weight": 4,
+    },
+    "MYSQL": {
+        "ports": [3306],
+        "weight": 3,
+    },
+    "TCP": {
+        "ports": [8080, 8443, 9000],
+        "weight": 15,
+    },
+    "UDP": {
+        "ports": [123, 500, 4500],
+        "weight": 8,
+    },
+    "ICMP": {
+        "ports": [0],
+        "weight": 6,
+    },
+}
 
-PROTOCOLS = [
-    "TCP",
-    "UDP",
-    "HTTP",
-    "HTTPS",
-    "DNS",
-    "SSH",
-    "ICMP",
-]
-
-NORMAL_DESTINATIONS = [
+INTERNAL_DESTINATIONS = [
+    "10.0.0.12",
     "10.0.0.21",
     "10.0.0.42",
     "10.0.0.57",
+    "10.0.0.64",
+    "10.0.0.91",
     "172.16.0.8",
     "172.16.0.19",
     "192.168.1.12",
@@ -378,8 +511,7 @@ SUSPICIOUS_DESTINATIONS = [
     "91.240.118.12",
 ]
 
-ATTACKS = [
-    "BENIGN",
+ATTACK_TYPES = [
     "DOS",
     "PORT_SCAN",
     "BRUTE_FORCE",
@@ -395,102 +527,257 @@ def random_ip():
     )
 
 
-def generate_traffic(n=35):
+def choose_protocol():
+    names = list(PROTOCOL_CONFIG.keys())
+    weights = [
+        PROTOCOL_CONFIG[x]["weight"]
+        for x in names
+    ]
 
-    records = []
+    return random.choices(
+        names,
+        weights=weights,
+        k=1,
+    )[0]
 
-    for _ in range(n):
 
-        roll = random.random()
+def generate_traffic(count=42):
 
-        if roll < 0.10:
-            classification = random.choice(
-                ["DOS", "PORT_SCAN", "BRUTE_FORCE", "BOTNET"]
+    random.seed(st.session_state.traffic_seed)
+
+    rows = []
+
+    for _ in range(count):
+
+        is_attack = random.random() < 0.16
+
+        if is_attack:
+
+            attack = random.choice(
+                ATTACK_TYPES
             )
+
+            source = random_ip()
+
             destination = random.choice(
                 SUSPICIOUS_DESTINATIONS
             )
-            status = "ANOMALOUS"
 
-        elif roll < 0.14:
-            classification = "INFILTRATION"
-            destination = random.choice(
-                SUSPICIOUS_DESTINATIONS
-            )
+            if attack == "DOS":
+
+                protocol = random.choice(
+                    ["TCP", "UDP", "ICMP"]
+                )
+
+                port = random.choice(
+                    [80, 443, 53, 0]
+                )
+
+                packets = random.randint(
+                    2500,
+                    12000,
+                )
+
+                duration = random.uniform(
+                    0.1,
+                    4.0,
+                )
+
+                packet_rate = (
+                    packets / duration
+                )
+
+                byte_count = random.randint(
+                    800_000,
+                    9_000_000,
+                )
+
+            elif attack == "PORT_SCAN":
+
+                protocol = "TCP"
+
+                port = random.randint(
+                    1,
+                    65535,
+                )
+
+                packets = random.randint(
+                    100,
+                    900,
+                )
+
+                duration = random.uniform(
+                    0.05,
+                    3.0,
+                )
+
+                packet_rate = (
+                    packets / duration
+                )
+
+                byte_count = random.randint(
+                    10_000,
+                    150_000,
+                )
+
+            elif attack == "BRUTE_FORCE":
+
+                protocol = "SSH"
+
+                port = 22
+
+                packets = random.randint(
+                    300,
+                    1500,
+                )
+
+                duration = random.uniform(
+                    2,
+                    15,
+                )
+
+                packet_rate = (
+                    packets / duration
+                )
+
+                byte_count = random.randint(
+                    40_000,
+                    450_000,
+                )
+
+            elif attack == "BOTNET":
+
+                protocol = random.choice(
+                    ["TCP", "UDP", "DNS"]
+                )
+
+                port = random.choice(
+                    [53, 8080, 8443]
+                )
+
+                packets = random.randint(
+                    700,
+                    3000,
+                )
+
+                duration = random.uniform(
+                    1,
+                    10,
+                )
+
+                packet_rate = (
+                    packets / duration
+                )
+
+                byte_count = random.randint(
+                    100_000,
+                    1_500_000,
+                )
+
+            else:
+
+                protocol = random.choice(
+                    ["TCP", "HTTPS", "DNS"]
+                )
+
+                port = (
+                    443
+                    if protocol == "HTTPS"
+                    else 53
+                    if protocol == "DNS"
+                    else 8080
+                )
+
+                packets = random.randint(
+                    500,
+                    2200,
+                )
+
+                duration = random.uniform(
+                    1,
+                    12,
+                )
+
+                packet_rate = (
+                    packets / duration
+                )
+
+                byte_count = random.randint(
+                    150_000,
+                    2_000_000,
+                )
+
+            classification = attack
             status = "ANOMALOUS"
 
         else:
-            classification = "BENIGN"
-            destination = random.choice(
-                NORMAL_DESTINATIONS
+
+            protocol = choose_protocol()
+
+            port = random.choice(
+                PROTOCOL_CONFIG[protocol]["ports"]
             )
+
+            source = random_ip()
+
+            destination = random.choice(
+                INTERNAL_DESTINATIONS
+            )
+
+            packets = random.randint(
+                8,
+                280,
+            )
+
+            duration = random.uniform(
+                0.2,
+                15,
+            )
+
+            packet_rate = (
+                packets / duration
+            )
+
+            byte_count = random.randint(
+                2_000,
+                350_000,
+            )
+
+            classification = "BENIGN"
             status = "NORMAL"
 
-        if classification == "DOS":
-            packets = random.randint(1200, 9000)
-            bytes_count = random.randint(
-                500_000,
-                8_000_000,
-            )
-
-        elif classification == "PORT_SCAN":
-            packets = random.randint(100, 900)
-            bytes_count = random.randint(
-                20_000,
-                150_000,
-            )
-
-        elif classification == "BRUTE_FORCE":
-            packets = random.randint(60, 500)
-            bytes_count = random.randint(
-                10_000,
-                200_000,
-            )
-
-        else:
-            packets = random.randint(5, 280)
-            bytes_count = random.randint(
-                1_000,
-                300_000,
-            )
-
-        records.append(
+        rows.append(
             {
                 "Time": (
                     datetime.now()
                     - timedelta(
-                        seconds=random.randint(0, 180)
+                        seconds=random.randint(
+                            0,
+                            180,
+                        )
                     )
                 ).strftime("%H:%M:%S"),
 
-                "Source": random_ip(),
+                "Source": source,
 
                 "Destination": destination,
 
-                "Protocol": random.choice(PROTOCOLS),
+                "Protocol": protocol,
 
-                "Port": random.choice(
-                    [
-                        22,
-                        53,
-                        80,
-                        443,
-                        25,
-                        3306,
-                        8080,
-                    ]
-                ),
+                "Port": port,
 
                 "Packets": packets,
 
-                "Bytes": bytes_count,
+                "Bytes": byte_count,
 
                 "Duration": round(
-                    random.uniform(
-                        0.01,
-                        8.5,
-                    ),
+                    duration,
                     3,
+                ),
+
+                "Packet Rate": round(
+                    packet_rate,
+                    2,
                 ),
 
                 "Classification": classification,
@@ -499,7 +786,7 @@ def generate_traffic(n=35):
             }
         )
 
-    return pd.DataFrame(records)
+    return pd.DataFrame(rows)
 
 
 traffic = generate_traffic()
@@ -512,10 +799,11 @@ with st.sidebar:
 
     st.markdown(
         """
-        <div class="sidebar-brand">
+        <div class="brand-block">
             <div class="brand-symbol">◈</div>
             <div class="brand-name">FLOWSENSE</div>
-            <div class="brand-description">
+
+            <div class="brand-subtitle">
                 NETWORK TRAFFIC INTELLIGENCE<br>
                 & ANOMALY DETECTION
             </div>
@@ -525,7 +813,7 @@ with st.sidebar:
     )
 
     st.markdown(
-        '<div class="nav-caption">MONITORING CONSOLE</div>',
+        '<div class="sidebar-caption">MONITORING CONSOLE</div>',
         unsafe_allow_html=True,
     )
 
@@ -540,38 +828,69 @@ with st.sidebar:
     )
 
     st.markdown(
-        """
-        <div class="sidebar-status">
-            <div class="status-item">
-                <span class="status-label">ENGINE</span>
-                <span class="status-online">● ONLINE</span>
-            </div>
-
-            <div class="status-item">
-                <span class="status-label">CAPTURE</span>
-                <span class="status-online">ACTIVE</span>
-            </div>
-
-            <div class="status-item">
-                <span class="status-label">MODEL</span>
-                <span class="status-online">READY</span>
-            </div>
-
-            <div class="status-item">
-                <span class="status-label">LATENCY</span>
-                <span class="status-online">18 ms</span>
-            </div>
-        </div>
-        """,
+        '<div class="sidebar-caption">SYSTEM STATUS</div>',
         unsafe_allow_html=True,
     )
+
+    # IMPORTANT:
+    # These are native Streamlit components.
+    # No HTML status block is used here.
+
+    s1, s2 = st.columns(
+        [1, 2]
+    )
+
+    with s1:
+        st.caption("ENGINE")
+
+    with s2:
+        st.success(
+            "ONLINE",
+            icon="●",
+        )
+
+    s1, s2 = st.columns(
+        [1, 2]
+    )
+
+    with s1:
+        st.caption("CAPTURE")
+
+    with s2:
+        st.success(
+            "ACTIVE",
+            icon="●",
+        )
+
+    s1, s2 = st.columns(
+        [1, 2]
+    )
+
+    with s1:
+        st.caption("MODEL")
+
+    with s2:
+        st.success(
+            "READY",
+            icon="●",
+        )
+
+    s1, s2 = st.columns(
+        [1, 2]
+    )
+
+    with s1:
+        st.caption("LATENCY")
+
+    with s2:
+        st.caption("18 ms")
 
     st.markdown(
         """
         <div class="sidebar-footer">
             FLOWSENSE / DEVELOPMENT BUILD<br>
             ML NETWORK MONITORING<br>
-            VERSION 0.1.0
+            VERSION 0.2.0
         </div>
         """,
         unsafe_allow_html=True,
@@ -589,31 +908,47 @@ if page == "01  /  Live Traffic":
     )
 
     st.markdown(
-        '<div class="main-title">Live traffic feed</div>',
+        '<div class="page-title">Live traffic feed</div>',
         unsafe_allow_html=True,
     )
 
     st.markdown(
         """
-        <div class="main-description">
+        <div class="page-description">
             Real-time network telemetry for observing packet flows,
-            protocols, traffic volume and anomalous behaviour.
+            protocol behaviour, traffic volume and anomalous activity.
         </div>
         """,
         unsafe_allow_html=True,
     )
 
     st.markdown(
-        '<div class="rule"></div>',
+        '<div class="header-line"></div>',
         unsafe_allow_html=True,
     )
 
-    total_packets = int(traffic["Packets"].sum())
-    total_bytes = int(traffic["Bytes"].sum())
-    anomalies = int(
-        (traffic["Status"] == "ANOMALOUS").sum()
+    # --------------------------------------------------------
+    # METRICS
+    # --------------------------------------------------------
+
+    total_packets = int(
+        traffic["Packets"].sum()
     )
-    sources = traffic["Source"].nunique()
+
+    total_bytes = int(
+        traffic["Bytes"].sum()
+    )
+
+    anomalies = int(
+        (
+            traffic["Status"]
+            == "ANOMALOUS"
+        ).sum()
+    )
+
+    active_sources = traffic[
+        "Source"
+    ].nunique()
 
     c1, c2, c3, c4 = st.columns(4)
 
@@ -621,40 +956,40 @@ if page == "01  /  Live Traffic":
         st.metric(
             "PACKETS / WINDOW",
             f"{total_packets:,}",
-            "rolling capture",
+            "Current capture",
         )
 
     with c2:
         st.metric(
             "TRAFFIC VOLUME",
             f"{total_bytes / 1_000_000:.2f} MB",
-            "observed",
+            "Observed volume",
         )
 
     with c3:
         st.metric(
             "ANOMALOUS FLOWS",
-            str(anomalies).zfill(2),
-            "requires inspection",
+            f"{anomalies:02d}",
+            "Requires inspection",
         )
 
     with c4:
         st.metric(
             "ACTIVE SOURCES",
-            str(sources).zfill(2),
-            "unique addresses",
+            f"{active_sources:02d}",
+            "Unique addresses",
         )
 
     st.write("")
 
+    # --------------------------------------------------------
+    # MAIN TELEMETRY
+    # --------------------------------------------------------
+
     left, right = st.columns(
-        [2.1, 1],
+        [2.15, 1],
         gap="large",
     )
-
-    # --------------------------------------------------------
-    # TRAFFIC TABLE
-    # --------------------------------------------------------
 
     with left:
 
@@ -664,11 +999,11 @@ if page == "01  /  Live Traffic":
         )
 
         st.markdown(
-            '<div class="section-subtitle">LIVE / SIMULATED CAPTURE</div>',
+            '<div class="section-subtitle">LATEST OBSERVED NETWORK FLOWS</div>',
             unsafe_allow_html=True,
         )
 
-        display_df = traffic[
+        table = traffic[
             [
                 "Time",
                 "Source",
@@ -685,37 +1020,73 @@ if page == "01  /  Live Traffic":
         )
 
         st.dataframe(
-            display_df,
+            table,
             use_container_width=True,
             hide_index=True,
-            height=610,
+            height=560,
+            column_config={
+                "Time": st.column_config.TextColumn(
+                    "TIME",
+                    width="small",
+                ),
+                "Source": st.column_config.TextColumn(
+                    "SOURCE",
+                    width="medium",
+                ),
+                "Destination": st.column_config.TextColumn(
+                    "DESTINATION",
+                    width="medium",
+                ),
+                "Protocol": st.column_config.TextColumn(
+                    "PROTO",
+                    width="small",
+                ),
+                "Port": st.column_config.NumberColumn(
+                    "PORT",
+                    width="small",
+                ),
+                "Packets": st.column_config.NumberColumn(
+                    "PACKETS",
+                    format="%d",
+                ),
+                "Classification": st.column_config.TextColumn(
+                    "CLASS",
+                    width="medium",
+                ),
+                "Status": st.column_config.TextColumn(
+                    "STATUS",
+                    width="small",
+                ),
+            },
         )
 
     # --------------------------------------------------------
-    # PROTOCOL PANEL
+    # RIGHT PANEL
     # --------------------------------------------------------
 
     with right:
 
         st.markdown(
-            '<div class="section-title">TRAFFIC MIX</div>',
+            '<div class="section-title">PROTOCOL MIX</div>',
             unsafe_allow_html=True,
         )
 
         st.markdown(
-            '<div class="section-subtitle">PROTOCOL DISTRIBUTION</div>',
+            '<div class="section-subtitle">FLOW DISTRIBUTION</div>',
             unsafe_allow_html=True,
         )
 
         protocol_counts = (
             traffic["Protocol"]
             .value_counts()
-            .sort_values(ascending=False)
+            .sort_values(
+                ascending=False
+            )
         )
 
         st.bar_chart(
             protocol_counts,
-            height=270,
+            height=245,
         )
 
         st.write("")
@@ -726,35 +1097,50 @@ if page == "01  /  Live Traffic":
         )
 
         st.markdown(
-            '<div class="section-subtitle">SIMULATION PARAMETERS</div>',
+            '<div class="section-subtitle">SIMULATED TELEMETRY ENGINE</div>',
             unsafe_allow_html=True,
         )
 
         if st.button(
-            "↻  REGENERATE TRAFFIC",
+            "↻  GENERATE NEW TRAFFIC",
             use_container_width=True,
         ):
-            traffic = generate_traffic()
+
+            st.session_state.traffic_seed += 1
+
             st.rerun()
 
         intensity = st.slider(
             "SIMULATION INTENSITY",
-            1,
-            10,
-            5,
+            min_value=1,
+            max_value=10,
+            value=5,
         )
 
         st.caption(
             f"PACKET RATE  /  {intensity * 20} pkt/s"
         )
 
-        st.caption("INTERFACE  /  eth0 / virtual")
-        st.caption("BUFFER  /  64 MB")
+        st.caption(
+            "INTERFACE  /  eth0"
+        )
+
+        st.caption(
+            "CAPTURE MODE  /  SIMULATED"
+        )
+
+        st.caption(
+            "BUFFER  /  64 MB"
+        )
+
+    # --------------------------------------------------------
+    # NETWORK ACTIVITY
+    # --------------------------------------------------------
 
     st.write("")
 
     st.markdown(
-        '<div class="section-title">FLOW VOLUME</div>',
+        '<div class="section-title">NETWORK ACTIVITY</div>',
         unsafe_allow_html=True,
     )
 
@@ -764,15 +1150,68 @@ if page == "01  /  Live Traffic":
     )
 
     flow_volume = (
-        traffic.groupby("Classification")["Packets"]
+        traffic
+        .groupby("Classification")["Packets"]
         .sum()
-        .sort_values(ascending=False)
+        .sort_values(
+            ascending=False
+        )
     )
 
     st.bar_chart(
         flow_volume,
-        height=260,
+        height=250,
     )
+
+    # --------------------------------------------------------
+    # SECONDARY NETWORK TELEMETRY
+    # --------------------------------------------------------
+
+    st.write("")
+
+    left2, right2 = st.columns(2)
+
+    with left2:
+
+        st.markdown(
+            '<div class="section-title">TOP DESTINATIONS</div>',
+            unsafe_allow_html=True,
+        )
+
+        destination_stats = (
+            traffic
+            .groupby("Destination")
+            .agg(
+                Flows=("Destination", "count"),
+                Packets=("Packets", "sum"),
+            )
+            .sort_values(
+                "Packets",
+                ascending=False,
+            )
+            .head(7)
+        )
+
+        st.dataframe(
+            destination_stats,
+            use_container_width=True,
+        )
+
+    with right2:
+
+        st.markdown(
+            '<div class="section-title">TRAFFIC RATE</div>',
+            unsafe_allow_html=True,
+        )
+
+        st.line_chart(
+            traffic[
+                ["Packet Rate"]
+            ].reset_index(
+                drop=True
+            ),
+            height=230,
+        )
 
 # ============================================================
 # PAGE 2 — MODEL PREDICTION
@@ -786,13 +1225,13 @@ elif page == "02  /  Model Prediction":
     )
 
     st.markdown(
-        '<div class="main-title">Model prediction</div>',
+        '<div class="page-title">Model prediction</div>',
         unsafe_allow_html=True,
     )
 
     st.markdown(
         """
-        <div class="main-description">
+        <div class="page-description">
             Submit a network-flow feature vector and estimate whether
             the observed behaviour is benign, suspicious or anomalous.
         </div>
@@ -801,7 +1240,7 @@ elif page == "02  /  Model Prediction":
     )
 
     st.markdown(
-        '<div class="rule"></div>',
+        '<div class="header-line"></div>',
         unsafe_allow_html=True,
     )
 
@@ -818,13 +1257,14 @@ elif page == "02  /  Model Prediction":
         )
 
         st.markdown(
-            '<div class="section-subtitle">MODEL INPUT</div>',
+            '<div class="section-subtitle">MODEL INPUT FEATURES</div>',
             unsafe_allow_html=True,
         )
 
         duration = st.number_input(
-            "FLOW DURATION",
+            "FLOW DURATION (SECONDS)",
             min_value=0.001,
+            max_value=10000.0,
             value=2.84,
             step=0.01,
         )
@@ -832,6 +1272,7 @@ elif page == "02  /  Model Prediction":
         packet_count = st.number_input(
             "PACKET COUNT",
             min_value=1,
+            max_value=1_000_000,
             value=186,
             step=1,
         )
@@ -839,6 +1280,7 @@ elif page == "02  /  Model Prediction":
         byte_count = st.number_input(
             "BYTE COUNT",
             min_value=1,
+            max_value=100_000_000,
             value=142500,
             step=100,
         )
@@ -860,6 +1302,7 @@ elif page == "02  /  Model Prediction":
                 443,
                 3306,
                 8080,
+                8443,
             ],
         )
 
@@ -879,12 +1322,15 @@ elif page == "02  /  Model Prediction":
         packet_rate = st.number_input(
             "PACKETS / SECOND",
             min_value=0.1,
+            max_value=100000.0,
             value=65.5,
             step=0.1,
         )
 
+        st.write("")
+
         predict = st.button(
-            "RUN CLASSIFICATION  →",
+            "RUN TRAFFIC CLASSIFICATION  →",
             use_container_width=True,
         )
 
@@ -896,13 +1342,16 @@ elif page == "02  /  Model Prediction":
         )
 
         st.markdown(
-            '<div class="section-subtitle">CLASSIFIER OUTPUT</div>',
+            '<div class="section-subtitle">MODEL CLASSIFICATION OUTPUT</div>',
             unsafe_allow_html=True,
         )
 
         if predict:
 
-            anomaly_score = 0.06
+            anomaly_score = 0.04
+
+            # Demo scoring logic.
+            # Replace this with the real trained model later.
 
             if packet_rate > 500:
                 anomaly_score += 0.35
@@ -918,10 +1367,13 @@ elif page == "02  /  Model Prediction":
                 23,
                 3389,
             ]:
-                anomaly_score += 0.10
+                anomaly_score += 0.08
 
-            if protocol == "ICMP" and packet_rate > 200:
-                anomaly_score += 0.20
+            if (
+                protocol == "ICMP"
+                and packet_rate > 200
+            ):
+                anomaly_score += 0.18
 
             anomaly_score = min(
                 anomaly_score,
@@ -943,8 +1395,24 @@ elif page == "02  /  Model Prediction":
             else:
 
                 prediction = "BENIGN"
-                confidence = 1 - anomaly_score
+                confidence = (
+                    1 - anomaly_score
+                )
                 risk = "LOW"
+
+            st.session_state.prediction_history.append(
+                {
+                    "Time": datetime.now().strftime(
+                        "%H:%M:%S"
+                    ),
+                    "Prediction": prediction,
+                    "Confidence": round(
+                        confidence * 100,
+                        2,
+                    ),
+                    "Risk": risk,
+                }
+            )
 
         else:
 
@@ -955,28 +1423,31 @@ elif page == "02  /  Model Prediction":
         if prediction == "WAITING":
 
             st.info(
-                "Submit a flow feature vector to run the classifier."
+                "Awaiting network flow feature vector."
+            )
+
+        elif prediction == "BENIGN":
+
+            st.success(
+                f"BENIGN  •  "
+                f"{confidence * 100:.1f}% confidence"
+            )
+
+        elif prediction == "SUSPICIOUS":
+
+            st.warning(
+                f"SUSPICIOUS  •  "
+                f"{confidence * 100:.1f}% confidence"
             )
 
         else:
 
-            if prediction == "BENIGN":
+            st.error(
+                f"ANOMALOUS  •  "
+                f"{confidence * 100:.1f}% confidence"
+            )
 
-                st.success(
-                    f"BENIGN  •  {confidence * 100:.1f}% confidence"
-                )
-
-            elif prediction == "SUSPICIOUS":
-
-                st.warning(
-                    f"SUSPICIOUS  •  {confidence * 100:.1f}% confidence"
-                )
-
-            else:
-
-                st.error(
-                    f"ANOMALOUS  •  {confidence * 100:.1f}% confidence"
-                )
+        if prediction != "WAITING":
 
             st.progress(
                 int(confidence * 100)
@@ -993,7 +1464,7 @@ elif page == "02  /  Model Prediction":
             unsafe_allow_html=True,
         )
 
-        features = pd.DataFrame(
+        feature_table = pd.DataFrame(
             {
                 "Feature": [
                     "duration",
@@ -1008,8 +1479,8 @@ elif page == "02  /  Model Prediction":
                     f"{duration:.3f} sec",
                     f"{packet_count:,}",
                     f"{byte_count:,}",
-                    source_port,
-                    destination_port,
+                    str(source_port),
+                    str(destination_port),
                     protocol,
                     f"{packet_rate:.2f} pkt/s",
                 ],
@@ -1017,14 +1488,18 @@ elif page == "02  /  Model Prediction":
         )
 
         st.dataframe(
-            features,
+            feature_table,
             use_container_width=True,
             hide_index=True,
         )
 
+    # --------------------------------------------------------
+    # MODEL SUMMARY
+    # --------------------------------------------------------
+
     st.write("")
 
-    c1, c2, c3 = st.columns(3)
+    c1, c2, c3, c4 = st.columns(4)
 
     with c1:
         st.metric(
@@ -1042,9 +1517,104 @@ elif page == "02  /  Model Prediction":
 
     with c3:
         st.metric(
+            "CLASSES",
+            "05",
+            "traffic categories",
+        )
+
+    with c4:
+        st.metric(
             "TARGET LATENCY",
             "<20 ms",
             "inference",
+        )
+
+    # --------------------------------------------------------
+    # WHY THE MODEL FLAGGED IT
+    # --------------------------------------------------------
+
+    if predict:
+
+        st.write("")
+
+        st.markdown(
+            '<div class="section-title">BEHAVIOUR SIGNALS</div>',
+            unsafe_allow_html=True,
+        )
+
+        st.markdown(
+            '<div class="section-subtitle">FEATURE CONTRIBUTION VIEW</div>',
+            unsafe_allow_html=True,
+        )
+
+        feature_scores = pd.DataFrame(
+            {
+                "Feature": [
+                    "Packet rate",
+                    "Packet count",
+                    "Byte volume",
+                    "Destination port",
+                    "Protocol",
+                    "Duration",
+                ],
+                "Signal": [
+                    min(
+                        packet_rate / 1000,
+                        1.0,
+                    ),
+                    min(
+                        packet_count / 3000,
+                        1.0,
+                    ),
+                    min(
+                        byte_count / 5_000_000,
+                        1.0,
+                    ),
+                    (
+                        0.85
+                        if destination_port
+                        in [22, 23, 3389]
+                        else 0.18
+                    ),
+                    (
+                        0.75
+                        if protocol == "ICMP"
+                        else 0.25
+                    ),
+                    min(
+                        duration / 20,
+                        1.0,
+                    ),
+                ],
+            }
+        ).set_index("Feature")
+
+        st.bar_chart(
+            feature_scores,
+            height=260,
+        )
+
+    # --------------------------------------------------------
+    # HISTORY
+    # --------------------------------------------------------
+
+    if st.session_state.prediction_history:
+
+        st.write("")
+
+        st.markdown(
+            '<div class="section-title">RECENT INFERENCE</div>',
+            unsafe_allow_html=True,
+        )
+
+        history_df = pd.DataFrame(
+            st.session_state.prediction_history[-10:]
+        )
+
+        st.dataframe(
+            history_df,
+            use_container_width=True,
+            hide_index=True,
         )
 
 # ============================================================
@@ -1059,87 +1629,107 @@ else:
     )
 
     st.markdown(
-        '<div class="main-title">Alerts & statistics</div>',
+        '<div class="page-title">Alerts & statistics</div>',
         unsafe_allow_html=True,
     )
 
     st.markdown(
         """
-        <div class="main-description">
-            Operational summary of detected anomalies, attack classes,
-            network behaviour and high-volume traffic sources.
+        <div class="page-description">
+            Operational view of detected anomalies, attack classes,
+            network behaviour and high-volume sources.
         </div>
         """,
         unsafe_allow_html=True,
     )
 
     st.markdown(
-        '<div class="rule"></div>',
+        '<div class="header-line"></div>',
         unsafe_allow_html=True,
     )
 
     anomaly_df = traffic[
-        traffic["Status"] == "ANOMALOUS"
+        traffic["Status"]
+        == "ANOMALOUS"
     ].copy()
 
     total_flows = len(traffic)
-    anomaly_count = len(anomaly_df)
-    benign_count = total_flows - anomaly_count
+
+    anomaly_count = len(
+        anomaly_df
+    )
+
+    benign_count = (
+        total_flows
+        - anomaly_count
+    )
 
     anomaly_rate = (
-        anomaly_count / total_flows * 100
+        anomaly_count
+        / total_flows
+        * 100
         if total_flows
         else 0
     )
 
-    top_threat = (
-        anomaly_df["Classification"]
-        .value_counts()
-        .idxmax()
-        if not anomaly_df.empty
-        else "NONE"
-    )
+    if not anomaly_df.empty:
+
+        top_threat = (
+            anomaly_df[
+                "Classification"
+            ]
+            .value_counts()
+            .idxmax()
+        )
+
+    else:
+
+        top_threat = "NONE"
+
+    # --------------------------------------------------------
+    # SUMMARY
+    # --------------------------------------------------------
 
     c1, c2, c3, c4 = st.columns(4)
 
     with c1:
         st.metric(
             "TOTAL FLOWS",
-            total_flows,
-            "observation window",
+            f"{total_flows:,}",
+            "Current window",
         )
 
     with c2:
         st.metric(
             "BENIGN FLOWS",
-            benign_count,
-            f"{100 - anomaly_rate:.1f}% of traffic",
+            f"{benign_count:,}",
+            "Expected behaviour",
         )
 
     with c3:
         st.metric(
             "ANOMALY RATE",
             f"{anomaly_rate:.1f}%",
-            "requires review",
+            "Traffic requiring review",
         )
 
     with c4:
         st.metric(
             "TOP THREAT",
             top_threat,
-            "dominant class",
+            "Dominant anomaly",
         )
 
     st.write("")
+
+    # --------------------------------------------------------
+    # ALERTS + ATTACK DISTRIBUTION
+    # --------------------------------------------------------
 
     left, right = st.columns(
         [1.2, 1],
         gap="large",
     )
-
-    # --------------------------------------------------------
-    # ALERTS
-    # --------------------------------------------------------
 
     with left:
 
@@ -1149,7 +1739,7 @@ else:
         )
 
         st.markdown(
-            '<div class="section-subtitle">CURRENT DETECTIONS</div>',
+            '<div class="section-subtitle">CURRENT NETWORK DETECTIONS</div>',
             unsafe_allow_html=True,
         )
 
@@ -1170,33 +1760,57 @@ else:
 
                     severity = "HIGH"
 
+                    st.markdown(
+                        f"""
+                        <div class="alert-high">
+                            <div class="alert-title">
+                                HIGH // {row['Classification']}
+                            </div>
+
+                            <div class="alert-description">
+                                Source {row['Source']}
+                                generated anomalous
+                                {row['Protocol']} traffic toward
+                                {row['Destination']}:{row['Port']}.
+                            </div>
+
+                            <div class="alert-meta">
+                                {row['Time']}
+                                &nbsp;•&nbsp;
+                                {row['Packets']:,} packets
+                            </div>
+                        </div>
+                        """,
+                        unsafe_allow_html=True,
+                    )
+
                 else:
 
                     severity = "MEDIUM"
 
-                with st.expander(
-                    f"{severity}  •  {row['Classification']}  •  {row['Time']}"
-                ):
+                    st.markdown(
+                        f"""
+                        <div class="alert-medium">
+                            <div class="alert-title">
+                                MEDIUM // {row['Classification']}
+                            </div>
 
-                    st.write(
-                        f"Source: `{row['Source']}`"
+                            <div class="alert-description">
+                                Source {row['Source']}
+                                generated suspicious
+                                {row['Protocol']} traffic toward
+                                {row['Destination']}:{row['Port']}.
+                            </div>
+
+                            <div class="alert-meta">
+                                {row['Time']}
+                                &nbsp;•&nbsp;
+                                {row['Packets']:,} packets
+                            </div>
+                        </div>
+                        """,
+                        unsafe_allow_html=True,
                     )
-
-                    st.write(
-                        f"Destination: `{row['Destination']}:{row['Port']}`"
-                    )
-
-                    st.write(
-                        f"Protocol: `{row['Protocol']}`"
-                    )
-
-                    st.write(
-                        f"Packets observed: `{row['Packets']:,}`"
-                    )
-
-    # --------------------------------------------------------
-    # ATTACK DISTRIBUTION
-    # --------------------------------------------------------
 
     with right:
 
@@ -1206,22 +1820,23 @@ else:
         )
 
         st.markdown(
-            '<div class="section-subtitle">DETECTED CLASSES</div>',
+            '<div class="section-subtitle">ANOMALY CLASS FREQUENCY</div>',
             unsafe_allow_html=True,
         )
 
-        attacks = (
+        attack_counts = (
             traffic[
-                traffic["Classification"] != "BENIGN"
+                traffic["Classification"]
+                != "BENIGN"
             ]["Classification"]
             .value_counts()
         )
 
-        if not attacks.empty:
+        if not attack_counts.empty:
 
             st.bar_chart(
-                attacks,
-                height=300,
+                attack_counts,
+                height=330,
             )
 
         else:
@@ -1230,11 +1845,11 @@ else:
                 "No attack classes observed."
             )
 
-    st.write("")
+    # --------------------------------------------------------
+    # ANALYTICS
+    # --------------------------------------------------------
 
-    # --------------------------------------------------------
-    # BYTE VOLUME
-    # --------------------------------------------------------
+    st.write("")
 
     left, right = st.columns(2)
 
@@ -1246,19 +1861,22 @@ else:
         )
 
         st.markdown(
-            '<div class="section-subtitle">BY PROTOCOL</div>',
+            '<div class="section-subtitle">TOTAL BY PROTOCOL</div>',
             unsafe_allow_html=True,
         )
 
         protocol_bytes = (
-            traffic.groupby("Protocol")["Bytes"]
+            traffic
+            .groupby("Protocol")["Bytes"]
             .sum()
-            .sort_values(ascending=False)
+            .sort_values(
+                ascending=False
+            )
         )
 
         st.bar_chart(
             protocol_bytes,
-            height=270,
+            height=260,
         )
 
     with right:
@@ -1269,26 +1887,31 @@ else:
         )
 
         st.markdown(
-            '<div class="section-subtitle">BY CLASSIFICATION</div>',
+            '<div class="section-subtitle">TRAFFIC CLASS VS PACKETS</div>',
             unsafe_allow_html=True,
         )
 
         class_packets = (
-            traffic.groupby("Classification")["Packets"]
+            traffic
+            .groupby("Classification")[
+                "Packets"
+            ]
             .sum()
-            .sort_values(ascending=False)
+            .sort_values(
+                ascending=False
+            )
         )
 
         st.bar_chart(
             class_packets,
-            height=270,
+            height=260,
         )
-
-    st.write("")
 
     # --------------------------------------------------------
     # SOURCE INVESTIGATION
     # --------------------------------------------------------
+
+    st.write("")
 
     st.markdown(
         '<div class="section-title">SOURCE INVESTIGATION</div>',
@@ -1301,7 +1924,8 @@ else:
     )
 
     source_stats = (
-        traffic.groupby("Source")
+        traffic
+        .groupby("Source")
         .agg(
             Flows=("Source", "count"),
             Packets=("Packets", "sum"),
@@ -1321,6 +1945,52 @@ else:
         hide_index=True,
     )
 
+    # --------------------------------------------------------
+    # THREAT SOURCE VIEW
+    # --------------------------------------------------------
+
+    st.write("")
+
+    st.markdown(
+        '<div class="section-title">THREAT SOURCES</div>',
+        unsafe_allow_html=True,
+    )
+
+    st.markdown(
+        '<div class="section-subtitle">SOURCES ASSOCIATED WITH ANOMALOUS FLOWS</div>',
+        unsafe_allow_html=True,
+    )
+
+    if not anomaly_df.empty:
+
+        threat_sources = (
+            anomaly_df
+            .groupby("Source")
+            .agg(
+                Alerts=("Source", "count"),
+                Packets=("Packets", "sum"),
+                Targets=("Destination", "nunique"),
+            )
+            .sort_values(
+                "Alerts",
+                ascending=False,
+            )
+            .head(10)
+            .reset_index()
+        )
+
+        st.dataframe(
+            threat_sources,
+            use_container_width=True,
+            hide_index=True,
+        )
+
+    else:
+
+        st.info(
+            "No anomalous sources detected."
+        )
+
 # ============================================================
 # FOOTER
 # ============================================================
@@ -1330,7 +2000,7 @@ st.markdown(
     <div class="app-footer">
         <span>FLOWSENSE</span>
         <span>NETWORK TRAFFIC INTELLIGENCE</span>
-        <span>SYSTEM ONLINE</span>
+        <span>DEVELOPMENT BUILD 0.2.0</span>
     </div>
     """,
     unsafe_allow_html=True,
